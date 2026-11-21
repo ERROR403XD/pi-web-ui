@@ -289,6 +289,15 @@ const MAX_TOKENS_PRESETS = [
 	{ label: "64K", value: "65536" },
 ];
 
+function isCustomSpec(value: string, presets: { value: string }[], custom?: boolean): boolean {
+	return custom ?? !presets.some((p) => p.value === value);
+}
+
+function toSpecNumber(value: string): number | undefined {
+	const n = Number(value.trim());
+	return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
 function getPresetTagLabel(tag: string, t: (k: any) => string): string {
 	switch (tag) {
 		case "官方":
@@ -353,6 +362,8 @@ interface DraftModel {
 	input: "text" | "text-image";
 	contextWindow: string;
 	maxTokens: string;
+	contextWindowCustom?: boolean;
+	maxTokensCustom?: boolean;
 	thinkingLevelMap?: UiThinkingLevelMap;
 	compat?: Record<string, unknown>;
 	customExtraBody?: string;
@@ -1001,8 +1012,8 @@ export function ModelConfigModal({
 				name: m.name.trim() || undefined,
 				reasoning: m.reasoning || undefined,
 				input: m.input === "text-image" ? ["text", "image"] : undefined,
-				contextWindow: m.contextWindow ? Number(m.contextWindow) : undefined,
-				maxTokens: m.maxTokens ? Number(m.maxTokens) : undefined,
+				contextWindow: toSpecNumber(m.contextWindow),
+				maxTokens: toSpecNumber(m.maxTokens),
 				...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 				...(m.compat ? { compat: m.compat } : {}),
 				...(m.customExtraBody?.trim() ? { customExtraBody: m.customExtraBody.trim() } : {}),
@@ -1609,10 +1620,16 @@ export function ModelConfigModal({
 														<span className="spec-combobox-label">{t("contextWindowLabel")}</span>
 														<select
 															className="spec-combobox-select"
-															value={CTX_PRESETS.some((p) => p.value === m.contextWindow) ? m.contextWindow : "custom"}
+															value={
+																isCustomSpec(m.contextWindow, CTX_PRESETS, m.contextWindowCustom)
+																	? "custom"
+																	: m.contextWindow
+															}
 															onChange={(e) => {
-																if (e.target.value !== "custom") {
-																	setModelRow(idx, { contextWindow: e.target.value });
+																if (e.target.value === "custom") {
+																	setModelRow(idx, { contextWindowCustom: true });
+																} else {
+																	setModelRow(idx, { contextWindow: e.target.value, contextWindowCustom: false });
 																}
 															}}
 														>
@@ -1623,9 +1640,10 @@ export function ModelConfigModal({
 															))}
 															<option value="custom">{t("customOption")}</option>
 														</select>
-														{(!CTX_PRESETS.some((p) => p.value === m.contextWindow) || m.contextWindow === "") && (
+														{isCustomSpec(m.contextWindow, CTX_PRESETS, m.contextWindowCustom) && (
 															<input
 																type="text"
+																inputMode="numeric"
 																className="spec-combobox-custom-input"
 																value={m.contextWindow}
 																onChange={(e) => setModelRow(idx, { contextWindow: e.target.value })}
@@ -1638,10 +1656,16 @@ export function ModelConfigModal({
 														<span className="spec-combobox-label">{t("maxOutputLabel")}</span>
 														<select
 															className="spec-combobox-select"
-															value={MAX_TOKENS_PRESETS.some((p) => p.value === m.maxTokens) ? m.maxTokens : "custom"}
+															value={
+																isCustomSpec(m.maxTokens, MAX_TOKENS_PRESETS, m.maxTokensCustom)
+																	? "custom"
+																	: m.maxTokens
+															}
 															onChange={(e) => {
-																if (e.target.value !== "custom") {
-																	setModelRow(idx, { maxTokens: e.target.value });
+																if (e.target.value === "custom") {
+																	setModelRow(idx, { maxTokensCustom: true });
+																} else {
+																	setModelRow(idx, { maxTokens: e.target.value, maxTokensCustom: false });
 																}
 															}}
 														>
@@ -1652,9 +1676,10 @@ export function ModelConfigModal({
 															))}
 															<option value="custom">{t("customOption")}</option>
 														</select>
-														{(!MAX_TOKENS_PRESETS.some((p) => p.value === m.maxTokens) || m.maxTokens === "") && (
+														{isCustomSpec(m.maxTokens, MAX_TOKENS_PRESETS, m.maxTokensCustom) && (
 															<input
 																type="text"
+																inputMode="numeric"
 																className="spec-combobox-custom-input"
 																value={m.maxTokens}
 																onChange={(e) => setModelRow(idx, { maxTokens: e.target.value })}
@@ -1672,7 +1697,9 @@ export function ModelConfigModal({
 																	type="button"
 																	key={lbl}
 																	className={`param-pill ${m.contextWindow === match.value ? "active" : ""}`}
-																	onClick={() => setModelRow(idx, { contextWindow: match.value })}
+																	onClick={() =>
+																		setModelRow(idx, { contextWindow: match.value, contextWindowCustom: false })
+																	}
 																	title={t("contextPresetTooltip", { label: lbl })}
 																>
 																	{lbl}
