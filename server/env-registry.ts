@@ -185,6 +185,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_WEB_LOAD_TIMING", scope: "public" },
 	{ name: "PI_WEB_LOCALE", scope: "public" },
 	{ name: "PI_WEB_LOCALE_BASE_URL", scope: "public" },
+	{ name: "PI_WEB_LOCAL_PROXY_PEERS", scope: "public" },
 	{ name: "PI_WEB_MANAGED", scope: "public" },
 	{ name: "PI_WEB_MAX_OPEN_CONVERSATIONS", scope: "public" },
 	{ name: "PI_WEB_MAX_SUBAGENTS", scope: "public" },

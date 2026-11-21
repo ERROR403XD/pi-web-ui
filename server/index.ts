@@ -239,6 +239,10 @@ const ALLOW_ORIGINS = (process.env.PI_WEB_ALLOW_ORIGINS ?? FILE_CFG.allowOrigins
 	.split(",")
 	.map((s) => s.trim().toLowerCase())
 	.filter(Boolean);
+const LOCAL_PROXY_PEERS = (process.env.PI_WEB_LOCAL_PROXY_PEERS ?? "")
+	.split(",")
+	.map((s) => s.trim())
+	.filter(Boolean);
 let AUTH_TOKEN = (process.env.PI_WEB_TOKEN ?? FILE_CFG.token ?? "").trim();
 
 const ALLOW_INSECURE_NO_AUTH = /^(1|true|yes)$/i.test(
@@ -1139,6 +1143,8 @@ const deviceCenter = await installLocalDeviceCenter({
 	allowHosts: ALLOW_HOSTS,
 	// dev 的 Vite 代理（页面 origin ≠ 后端 Host）由这里显式放行；生产反向代理通常同源。
 	allowOrigins: ALLOW_ORIGINS,
+	// 反代与内核不在同一网络命名空间（如 Docker 里的 OpenResty）时，对端不是回环，需显式点名代理 IP。
+	localProxyPeers: LOCAL_PROXY_PEERS,
 	lanAccess: deviceLanAccess,
 	botCatalog: {
 		defaultCwd: CWD,

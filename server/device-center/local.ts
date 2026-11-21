@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createMobileNotificationForwarder } from "./mobile-notification-forwarder.js";
@@ -80,6 +81,8 @@ interface Options {
 	allowHosts?: readonly string[];
 	/** 显式声明的同源例外（dev 的 Vite 代理：页面 origin 与后端 Host 不同）。 */
 	allowOrigins?: readonly string[];
+	/** 显式信任的反向代理对端 IP（PI_WEB_LOCAL_PROXY_PEERS，逐个精确匹配，不支持网段）。 */
+	localProxyPeers?: readonly string[];
 	lanAccess?: DeviceLanAccess;
 }
 
@@ -175,8 +178,9 @@ export async function requestDeviceHub(
 }
 
 /**
- * Local-only guard for the device center API: the peer must be loopback, and the
- * Host must be loopback too — except for hostnames the operator explicitly declared
+ * Local-only guard for the device center API: the peer must be loopback (or a
+ * reverse-proxy address explicitly listed in PI_WEB_LOCAL_PROXY_PEERS, e.g. a Docker
+ * OpenResty container), and the Host must be loopback too — except for hostnames the operator explicitly declared
  * in PI_WEB_ALLOW_HOSTS. Those domains are the ones a reverse proxy forwards; the
  * global host guard already trusts them (and is in strict-whitelist mode once the
  * list is non-empty), so extending that decision here keeps a proxied deployment
@@ -202,10 +206,41 @@ export function allowsLocalWriteOrigin(
 	}
 }
 
-function localOnly(allowHosts: ReadonlySet<string>, allowOrigins: ReadonlySet<string>) {
+function normalizePeerAddress(address: string): string {
+	return address
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/, "");
+}
+
+/**
+ * 反代对端白名单（单源）：只收合法 IP 字面量，按归一化后的地址精确匹配。
+ * 网段、通配、主机名一律丢弃——放行的只是运维点名的那一个代理进程所在地址。
+ */
+export function parseLocalProxyPeers(entries: readonly string[] | undefined): ReadonlySet<string> {
+	return new Set(
+		(entries ?? [])
+			.flatMap((entry) => String(entry).split(","))
+			.map(normalizePeerAddress)
+			.filter((entry) => isIP(entry) !== 0),
+	);
+}
+
+/** 设备中心的对端判定：回环恒放行；否则只认 PI_WEB_LOCAL_PROXY_PEERS 显式声明的代理地址。 */
+export function isLocalPeerAllowed(remoteAddress: string | undefined, proxyPeers: ReadonlySet<string>): boolean {
+	if (!remoteAddress) return false;
+	const peer = normalizePeerAddress(remoteAddress);
+	return peer === "::1" || peer.startsWith("127.") || proxyPeers.has(peer);
+}
+
+function localOnly(
+	allowHosts: ReadonlySet<string>,
+	allowOrigins: ReadonlySet<string>,
+	proxyPeers: ReadonlySet<string>,
+) {
 	return (req: Request, res: Response, next: NextFunction): void => {
-		const peer = req.socket.remoteAddress?.replace(/^::ffff:/, "");
-		if (!(peer === "::1" || peer?.startsWith("127."))) {
+		if (!isLocalPeerAllowed(req.socket.remoteAddress, proxyPeers)) {
 			res.status(403).json({ code: "LOCAL_ONLY", error: "Configure devices from this computer's loopback address" });
 			return;
 		}
@@ -453,7 +488,7 @@ export async function installLocalDeviceCenter(options: Options) {
 			})
 			.filter(Boolean),
 	);
-	const guard = localOnly(allowHosts, allowOrigins);
+	const guard = localOnly(allowHosts, allowOrigins, parseLocalProxyPeers(options.localProxyPeers));
 	// Public incoming webhook forwarding (authenticates via webhook token inside hub)
 	options.app.post("/api/rooms/:id/webhooks/incoming/:webhookId", async (req, res) => {
 		// 房间引擎在本机，webhook 也只能落到本机这套房间上。
